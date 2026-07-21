@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Extract Features</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: Arial; background:#f0f2f5; padding:20px; }
+        .container { max-width:800px; margin:0 auto; background:white; border-radius:10px; padding:30px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+        h1 { color:#333; margin-bottom:5px; }
+        .subtitle { color:#666; margin-bottom:20px; }
+        .form-group { margin-bottom:15px; }
+        label { display:block; font-weight:bold; margin-bottom:5px; font-size:14px; }
+        input[type="text"], input[type="number"] { width:100%; padding:8px 12px; border:1px solid #ddd; border-radius:4px; font-size:14px; }
+        .btn { padding:10px 24px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:bold; margin-right:10px; }
+        .btn-primary { background:#2563eb; color:white; }
+        .btn-primary:hover { opacity:0.8; }
+        .btn-secondary { background:#6b7280; color:white; }
+        .btn-secondary:hover { opacity:0.8; }
+        .btn-danger { background:#dc2626; color:white; }
+        .btn-danger:hover { opacity:0.8; }
+        .progress-section { margin-top:20px; padding:15px; background:#f9fafb; border-radius:6px; display:none; }
+        .progress-bar { width:100%; height:20px; background:#e5e7eb; border-radius:10px; overflow:hidden; }
+        .progress-fill { height:100%; background:#2563eb; transition:width 0.3s; width:0%; }
+        .progress-text { margin-top:8px; font-size:13px; color:#666; }
+        .btn-group { margin-top:20px; }
+        .btn-back { display:inline-block; padding:8px 16px; background:#6b7280; color:white; text-decoration:none; border-radius:6px; font-size:13px; margin-bottom:15px; }
+        .btn-back:hover { opacity:0.8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/dashboard" class="btn-back">← Back to Dashboard</a>
+        <h1>📥 Extract Features</h1>
+        <p class="subtitle">Extract features from images using OSNet/ReID model</p>
+        
+        <form id="extractForm">
+            <div class="form-group">
+                <label>Model Path</label>
+                <input type="text" id="modelPath" placeholder="C:/path/to/model" value="{{ config.steps.extraction.model_path }}">
+            </div>
+            <div class="form-group">
+                <label>Dataset Folder</label>
+                <input type="text" id="datasetPath" placeholder="C:/path/to/dataset/folder" value="{{ config.steps.extraction.dataset_path }}">
+            </div>
+            <div class="form-group">
+                <label>Output Directory</label>
+                <input type="text" id="outputDir" placeholder="./extracted_features/" value="{{ config.steps.extraction.output_dir or './extracted_features/' }}">
+            </div>
+            <div class="form-group">
+                <label>Batch Size</label>
+                <input type="number" id="batchSize" value="32" min="8" max="128">
+            </div>
+            <div class="form-group">
+                <label>Min Image Size (pixels)</label>
+                <input type="number" id="minSize" value="20" min="10">
+            </div>
+            
+            <div class="btn-group">
+                <button type="button" class="btn btn-primary" onclick="startExtraction()">▶ Start Extraction</button>
+                <button type="button" class="btn btn-secondary" onclick="saveConfig()">💾 Save Config</button>
+            </div>
+        </form>
+        
+        <div class="progress-section" id="progressSection">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">Processing: 0 / 0 images</div>
+            <button type="button" class="btn btn-danger" onclick="cancelExtraction()" style="margin-top:10px;">⛔ Cancel</button>
+        </div>
+    </div>
+    
+    <script>
+        let extractionRunning = false;
+        
+        async function startExtraction() {
+            const modelPath = document.getElementById('modelPath').value;
+            const datasetPath = document.getElementById('datasetPath').value;
+            const outputDir = document.getElementById('outputDir').value;
+            const batchSize = parseInt(document.getElementById('batchSize').value);
+            const minSize = parseInt(document.getElementById('minSize').value);
+            
+            if (!modelPath || !datasetPath || !outputDir) {
+                alert('Please fill in all required fields');
+                return;
+            }
+            
+            document.getElementById('progressSection').style.display = 'block';
+            extractionRunning = true;
+            
+            try {
+                const response = await fetch('/api/dashboard/extract/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        model_path: modelPath,
+                        dataset_path: datasetPath,
+                        output_dir: outputDir,
+                        batch_size: batchSize,
+                        min_size: minSize
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    updateProgress();
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch(e) {
+                alert('Error: ' + e.message);
+            }
+        }
+        
+        async function updateProgress() {
+            if (!extractionRunning) return;
+            try {
+                const response = await fetch('/api/dashboard/extract/status');
+                const data = await response.json();
+                document.getElementById('progressFill').style.width = data.percent + '%';
+                document.getElementById('progressText').textContent = 
+                    `Processing: ${data.processed} / ${data.total} images | Valid: ${data.valid} | Skipped: ${data.skipped}`;
+                
+                // Show error if present
+                if (data.error) {
+                    document.getElementById('progressText').textContent = `❌ Error: ${data.error}`;
+                    extractionRunning = false;
+                    return;
+                }
+                
+                if (data.percent < 100 && extractionRunning) {
+                    setTimeout(updateProgress, 1000);
+                } else if (data.percent >= 100) {
+                    document.getElementById('progressText').textContent = '✅ Extraction complete!';
+                    extractionRunning = false;
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+        
+        async function cancelExtraction() {
+            extractionRunning = false;
+            await fetch('/api/dashboard/extract/cancel', {method: 'POST'});
+            document.getElementById('progressText').textContent = '⛔ Cancelled';
+        }
+        
+        async function saveConfig() {
+            const data = {
+                model_path: document.getElementById('modelPath').value,
+                dataset_path: document.getElementById('datasetPath').value,
+                output_dir: document.getElementById('outputDir').value
+            };
+            await fetch('/api/dashboard/config/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({step: 'extraction', data: data})
+            });
+            alert('Configuration saved!');
+        }
+    </script>
+</body>
+</html>

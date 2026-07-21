@@ -1,0 +1,11 @@
+processed_dataset
+README.txt
+clustered_dataset/
+dataset/
+processed_dataset/
+__pycache__/
+*.json
+*.dat
+*.pkl
+*.onnx
+draft/

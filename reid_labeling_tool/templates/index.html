@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ReID Labeling</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+
+<div class="sidebar">
+    <h3>📁 Clusters <span id="totalImages">0</span></h3>
+    <input class="search" id="search" placeholder="🔍 Search..." oninput="renderClusters()">
+    <div class="stats">
+        <span id="clusterCount">0 clusters</span>
+        <span id="imageCount">0 images</span>
+    </div>
+    <div class="btn-group">
+        <button class="btn btn-blue" onclick="newCluster()">✨ New</button>
+        <button class="btn btn-red" onclick="splitCluster()">✂️ Split</button>
+        <button class="btn btn-purple" onclick="findSimilar()">🔍 Find Similar</button>
+        <button class="btn btn-green" onclick="exportLabels()">💾 Export</button>
+        <button class="btn btn-gray" onclick="refresh()">🔄</button>
+    </div>
+    <div class="cluster-list" id="clusterList"></div>
+</div>
+
+<div class="gallery">
+    <div class="gallery-header">
+        <h2 id="clusterTitle">📂 Select a person</h2>
+        <span class="badge" id="imageBadge">0 images</span>
+    </div>
+    
+    <div class="status" id="status"></div>
+    
+    <div class="image-grid" id="imageGrid">
+        <div class="empty"><span class="icon">👈</span>Select a person from the sidebar</div>
+    </div>
+    
+    <div class="gallery-footer">
+        <button class="nav-btn" onclick="previousCluster()">◀ Previous</button>
+        <span id="clusterCounter">0 / 0</span>
+        <button class="nav-btn" onclick="nextCluster()">Next ▶</button>
+    </div>
+</div>
+
+<div class="sidebar" id="similar-panel" style="width: 250px;">
+    <h3>🎯 Similar Clusters</h3>
+    <div id="similar-results" class="cluster-list">
+        <div class="empty" style="padding-top: 20px;">Select images and click "Find Similar"</div>
+    </div>
+</div>
+
+<script>
+let currentCluster = null;
+let selected = new Set();
+let clusterData = {};
+let allImages = [];
+let zoom = 120;
+let draggedFile = null;
+let dragSource = null;
+
+// ===== NAVIGATION HELPERS =====
+function getSortedClusters() {
+    return Object.keys(clusterData).sort((a, b) => 
+        parseInt(a.replace('person_', '')) - parseInt(b.replace('person_', ''))
+    );
+}
+
+function getCurrentIndex() {
+    const sorted = getSortedClusters();
+    return sorted.indexOf(currentCluster);
+}
+
+function updateNavButtons() {
+    const sorted = getSortedClusters();
+    const currentIndex = getCurrentIndex();
+    const total = sorted.length;
+    
+    document.getElementById('clusterCounter').textContent = 
+        total > 0 ? `${currentIndex + 1} / ${total}` : '0 / 0';
+    
+    const prevBtn = document.querySelector('.nav-btn:first-child');
+    const nextBtn = document.querySelector('.nav-btn:last-child');
+    
+    if (prevBtn) {
+        prevBtn.disabled = currentIndex <= 0 || total === 0;
+    }
+    if (nextBtn) {
+        nextBtn.disabled = currentIndex >= total - 1 || total === 0;
+    }
+}
+
+function nextCluster() {
+    const sorted = getSortedClusters();
+    const currentIndex = getCurrentIndex();
+    if (currentIndex < sorted.length - 1) {
+        selectCluster(sorted[currentIndex + 1]);
+    }
+}
+
+function previousCluster() {
+    const sorted = getSortedClusters();
+    const currentIndex = getCurrentIndex();
+    if (currentIndex > 0) {
+        selectCluster(sorted[currentIndex - 1]);
+    }
+}
+
+// ===== LOAD CLUSTERS =====
+async function loadClusters() {
+    try {
+        const r = await fetch('/api/clusters');
+        clusterData = await r.json();
+        renderClusters();
+        if (currentCluster && !clusterData[currentCluster]) {
+            const keys = Object.keys(clusterData);
+            currentCluster = keys.length ? keys[0] : null;
+        }
+        if (currentCluster) {
+            selectCluster(currentCluster);
+        } else if (Object.keys(clusterData).length > 0) {
+            selectCluster(Object.keys(clusterData).sort((a,b) => parseInt(a.replace('person_','')) - parseInt(b.replace('person_','')))[0]);
+        }
+        else {
+            document.getElementById('imageGrid').innerHTML = '<div class="empty"><span class="icon">👈</span>Select a person from the sidebar</div>';
+            document.getElementById('clusterTitle').textContent = '📂 Select a person';
+            document.getElementById('imageBadge').textContent = '0 images';
+            updateNavButtons();
+        }
+        updateStats();
+    } catch(e) { console.error(e); }
+}
+
+function reloadClusters() {
+    loadClusters();
+    showStatus('🔄 Dataset reloaded', 'info');
+}
+
+function renderClusters() {
+    const search = document.getElementById('search').value.toLowerCase();
+    const list = document.getElementById('clusterList');
+    const sorted = Object.keys(clusterData).sort((a,b) => parseInt(a.replace('person_','')) - parseInt(b.replace('person_','')));
+    
+    list.innerHTML = '';
+    let count = 0, total = 0;
+    for (const key of sorted) {
+        if (search && !key.toLowerCase().includes(search)) continue;
+        count++;
+        total += clusterData[key];
+        const li = document.createElement('div');
+        li.className = `cluster-item${currentCluster===key?' active':''}`;
+        li.dataset.clusterId = key;
+        li.innerHTML = `
+            <span style="display:flex;align-items:center;flex:1;">
+                <img class="cluster-preview" id="preview_${key}" src="/preview/${key}" 
+                     onerror="this.style.display='none'">
+                ${key}
+            </span>
+            <span class="count">${clusterData[key]}</span>
+        `;
+        li.addEventListener('click', () => selectCluster(key));
+        li.addEventListener('dragover', e => { e.preventDefault(); li.classList.add('drag-over'); });
+        li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+        li.addEventListener('drop', onDropOnCluster);
+        list.appendChild(li);
+    }
+    document.getElementById('clusterCount').textContent = `${count} clusters`;
+    document.getElementById('imageCount').textContent = `${total} images`;
+    document.getElementById('totalImages').textContent = `(${total})`;
+    updateNavButtons();
+}
+
+function updateStats() {
+    const total = Object.values(clusterData).reduce((a,b)=>a+b,0);
+    document.getElementById('totalImages').textContent = `(${total})`;
+}
+
+// ===== SET DATASET PATH =====
+async function setDatasetPath() {
+    const pathInput = document.getElementById('datasetPathInput');
+    const path = pathInput.value.trim();
+    
+    if (!path) {
+        showStatus('Please enter a dataset path', 'error');
+        return;
+    }
+    
+    // Convert Windows backslashes to forward slashes
+    const cleanPath = path.replace(/\\/g, '/');
+    
+    try {
+        showStatus('🔄 Loading dataset...', 'info');
+        
+        const response = await fetch('/api/dashboard/set_labeling_path', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({dataset_path: cleanPath})
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showStatus('✅ Dataset path updated! Reloading...', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showStatus('❌ ' + (result.error || 'Failed to set dataset path'), 'error');
+        }
+    } catch(e) {
+        showStatus('❌ Error: ' + e.message, 'error');
+    }
+}
+
+// Enter key support for path input
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && document.activeElement.id === 'datasetPathInput') {
+        setDatasetPath();
+    }
+});
+
+// ===== SELECT CLUSTER =====
+async function selectCluster(name) {
+    if (!name) return;
+    currentCluster = name;
+    selected.clear();
+    document.querySelectorAll('.cluster-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.clusterId === name);
+    });
+    document.getElementById('clusterTitle').textContent = `📂 ${name}`;
+    
+    try {
+        const r = await fetch(`/api/cluster/${name}`);
+        const data = await r.json();
+        allImages = data.images || [];
+        document.getElementById('imageBadge').textContent = `${allImages.length} images`;
+        renderImages();
+        updateNavButtons();
+    } catch(e) { console.error(e); }
+}
+
+function renderImages() {
+    const grid = document.getElementById('imageGrid');
+    if (!allImages.length) {
+        grid.innerHTML = '<div class="empty"><span class="icon">📭</span>No images in this cluster</div>';
+        return;
+    }
+    grid.innerHTML = allImages.map(img => `
+        <div class="image-card ${selected.has(img)?'selected':''}" 
+             draggable="true"
+             onclick="toggle('${img}')"
+             ondragstart="onDragStart(event,'${img}')"
+             ondragend="onDragEnd(event)">
+            <img src="/images/${currentCluster}/${img}" loading="lazy" alt="${img}" 
+                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%2210%22%3E❌%3C/text%3E%3C/svg%3E'">
+            <div class="name">${img}</div>
+            <div class="check">✓</div>
+        </div>
+    `).join('');
+    grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${zoom}px, 1fr))`;
+}
+
+function toggle(img) {
+    selected.has(img) ? selected.delete(img) : selected.add(img);
+    renderImages();
+}
+
+function selectAll() { allImages.forEach(i => selected.add(i)); renderImages(); }
+function deselectAll() { selected.clear(); renderImages(); }
+function zoomIn() { zoom = Math.min(zoom+20, 300); renderImages(); }
+function zoomOut() { zoom = Math.max(zoom-20, 70); renderImages(); }
+
+// ===== DRAG & DROP =====
+function onDragStart(e, img) {
+    draggedFile = img;
+    dragSource = currentCluster;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', img);
+    setTimeout(() => e.target.closest('.image-card')?.classList.add('dragging'), 0);
+}
+function onDragEnd(e) {
+    e.target.closest('.image-card')?.classList.remove('dragging');
+}
+
+async function onDropOnCluster(e) {
+    e.preventDefault();
+    const targetCluster = e.currentTarget.dataset.clusterId;
+    e.currentTarget.classList.remove('drag-over');
+    
+    if (!targetCluster) { showStatus('Invalid drop target', 'error'); return; }
+    if (dragSource === targetCluster) { showStatus(`Already in ${targetCluster}`, 'info'); return; }
+    
+    let imagesToMove = [];
+    if (selected.size > 0 && dragSource === currentCluster) {
+        imagesToMove = Array.from(selected);
+    } else if (draggedFile) {
+        imagesToMove = [draggedFile];
+    } else {
+        showStatus('No images to move', 'error');
+        return;
+    }
+    
+    await moveMultipleImages(imagesToMove, dragSource, targetCluster);
+    draggedFile = null; dragSource = null;
+}
+
+// ===== SIMILAR PANEL DRAG & DROP =====
+function onSimilarDragOver(e) {
+    e.preventDefault();
+    e.currentTarget.classList.add('drag-over-similar');
+}
+
+function onSimilarDragLeave(e) {
+    e.currentTarget.classList.remove('drag-over-similar');
+}
+
+async function onDropOnSimilar(e, targetCluster) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over-similar');
+    
+    if (!targetCluster) {
+        showStatus('Invalid drop target', 'error');
+        return;
+    }
+    
+    if (currentCluster === targetCluster) {
+        showStatus(`Already in ${targetCluster}`, 'info');
+        return;
+    }
+    
+    if (selected.size === 0) {
+        showStatus('Select images first before dragging', 'error');
+        return;
+    }
+    
+    const imagesToMove = Array.from(selected);
+    showStatus(`📦 Moving ${imagesToMove.length} images to ${targetCluster}...`, 'info');
+    await moveMultipleImages(imagesToMove, currentCluster, targetCluster);
+}
+
+// ===== MOVE IMAGES =====
+async function moveImage(img, src, target) {
+    try {
+        const r = await fetch('/api/move', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({filename:img, source_cluster:src, target_cluster:target})
+        });
+        const result = await r.json();
+        if (result.success) {
+            showStatus(`✅ Moved ${img} to ${target}`, 'success');
+            if (src === currentCluster) {
+                allImages = allImages.filter(i => i !== img);
+                selected.delete(img);
+                renderImages();
+            }
+            clusterData[src]--;
+            if(clusterData[target]){
+                clusterData[target]++;
+            } else {
+                clusterData[target] = 1;
+            }
+            if (clusterData[src] === 0) {
+                delete clusterData[src];
+
+                if (currentCluster === src) {
+
+                    const keys = Object.keys(clusterData).sort(
+                        (a, b) =>
+                            parseInt(a.replace('person_', '')) -
+                            parseInt(b.replace('person_', ''))
+                    );
+
+                    const oldIndex = keys.findIndex(k =>
+                        parseInt(k.replace('person_', '')) >
+                        parseInt(src.replace('person_', ''))
+                    );
+
+                    currentCluster = oldIndex !== -1
+                        ? keys[oldIndex]
+                        : (keys.length ? keys[keys.length - 1] : null);
+
+                    if (currentCluster)
+                        selectCluster(currentCluster);
+                }
+            }
+
+            renderClusters();
+            updateStats();
+        } else {
+            showStatus(`❌ ${result.error}`, 'error');
+        }
+    } catch(e) { showStatus(`❌ ${e.message}`, 'error'); }
+}
+
+async function moveMultipleImages(images, src, target) {
+    try {
+        const r = await fetch('/api/move_multiple', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({filenames: images, source_cluster: src, target_cluster: target})
+        });
+        const result = await r.json();
+        if (result.success) {
+            showStatus(`✅ Moved ${images.length} images to ${target}`, 'success');
+            if (src === currentCluster) {
+                allImages = allImages.filter(i => !images.includes(i));
+                images.forEach(img => selected.delete(img));
+                renderImages();
+            }
+            clusterData[src] -= images.length;
+            if(clusterData[target]){
+                clusterData[target] += images.length;
+            } else {
+                clusterData[target] = images.length;
+            }
+            if (clusterData[src] === 0) {
+                delete clusterData[src];
+
+                if (currentCluster === src) {
+
+                    const keys = Object.keys(clusterData).sort(
+                        (a, b) =>
+                            parseInt(a.replace('person_', '')) -
+                            parseInt(b.replace('person_', ''))
+                    );
+
+                    const currentNumber = parseInt(src.replace('person_', ''));
+
+                    let nextCluster = keys.find(k =>
+                        parseInt(k.replace('person_', '')) > currentNumber
+                    );
+
+                    if (!nextCluster && keys.length > 0) {
+                        nextCluster = keys[keys.length - 1];
+                    }
+
+                    currentCluster = nextCluster || null;
+
+                    if (currentCluster) {
+                        renderClusters();
+                        await selectCluster(currentCluster);
+                    } else {
+                        renderClusters();
+                    }
+
+                    updateStats();
+                    return;
+                }
+            }
+            renderClusters();
+            updateStats();
+        } else {
+            showStatus(`❌ ${result.error}`, 'error');
+        }
+    } catch(e) { showStatus(`❌ ${e.message}`, 'error'); }
+}
+
+function showStatus(msg, type='success') {
+    const s = document.getElementById('status');
+    s.textContent = msg;
+    s.className = `status show ${type}`;
+    clearTimeout(s._timer);
+    s._timer = setTimeout(() => s.className = 'status', 3000);
+}
+
+// ===== EXPORT =====
+async function exportLabels() {
+    showStatus('📦 Exporting labels...', 'info');
+    const r = await fetch('/api/export');
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `labels_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showStatus('✅ Exported!', 'success');
+}
+
+// ===== NEW CLUSTER =====
+async function newCluster() {
+    const newId = prompt("Enter new person ID (e.g., person_9999):");
+    if (!newId || !/^person_\d+$/.test(newId)) {
+
+        showStatus("Invalid ID format. Use 'person_xxxx'.", 'error');
+        return;
+    }
+    if (clusterData[newId]) {
+        showStatus(`${newId} already exists.`, 'error');
+        return;
+    }
+
+    const r = await fetch('/api/new_cluster', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cluster_id: newId})
+    });
+    const result = await r.json();
+    if (result.success) {
+        showStatus(`✅ Created new cluster: ${newId}`, 'success');
+        clusterData[newId] = 0;
+        renderClusters();
+        selectCluster(newId);
+    } else {
+        showStatus(`❌ ${result.error}`, 'error');
+    }
+}
+
+// ===== SPLIT =====
+async function splitCluster() {
+    if (!currentCluster) { showStatus('Select a cluster first', 'error'); return; }
+    if (!selected.size) { showStatus('Select images to split first', 'error'); return; }
+    
+    function getNextAvailableClusterName() {
+        const existingNumbers = Object.keys(clusterData)
+            .filter(name => name.startsWith('person_'))
+            .map(name => parseInt(name.replace('person_', '')))
+            .sort((a, b) => a - b);
+        
+        let nextNumber = 1;
+        for (const num of existingNumbers) {
+            if (num === nextNumber) {
+                nextNumber++;
+            } else if (num > nextNumber) {
+                break;
+            }
+        }
+        
+        return `person_${String(nextNumber).padStart(4, '0')}`;
+    }
+    
+    const suggestedName = getNextAvailableClusterName();
+    const newClusterId = prompt(
+        `Enter new person ID for the ${selected.size} selected images:`,
+        suggestedName
+    );
+    
+    if (!newClusterId) return;
+    
+    if (!/^person_\d+$/.test(newClusterId)) {
+        showStatus("Invalid ID format. Use 'person_xxxx'.", 'error');
+        return;
+    }
+    
+    if (clusterData[newClusterId]) { 
+        showStatus(`${newClusterId} already exists`, 'error'); 
+        return; 
+    }
+    
+    const sourceCluster = currentCluster;
+    const selectedImages = Array.from(selected);
+    
+    const r = await fetch('/api/split', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+            source_cluster:sourceCluster,
+            target_cluster:newClusterId,
+            images:selectedImages
+        })
+    });
+    const result = await r.json();
+    if (result.success) {
+        showStatus(`✅ Created ${newClusterId} with ${selectedImages.length} images`, 'success');
+        
+        clusterData[sourceCluster] -= selectedImages.length;
+        clusterData[newClusterId] = selectedImages.length;
+        
+        if (clusterData[sourceCluster] === 0) {
+            delete clusterData[sourceCluster];
+        }
+
+        selected.clear();
+        
+        if (clusterData[sourceCluster] > 0) {
+            await selectCluster(sourceCluster);
+        } else {
+            const keys = Object.keys(clusterData).sort(
+                (a, b) => parseInt(a.replace('person_', '')) - parseInt(b.replace('person_', ''))
+            );
+            
+            const currentNumber = parseInt(sourceCluster.replace('person_', ''));
+            let nextCluster = keys.find(k => parseInt(k.replace('person_', '')) > currentNumber);
+            
+            if (!nextCluster && keys.length > 0) {
+                nextCluster = keys[keys.length - 1];
+            }
+            
+            if (nextCluster) {
+                await selectCluster(nextCluster);
+            } else {
+                document.getElementById('imageGrid').innerHTML = '<div class="empty"><span class="icon">👈</span>Select a person from the sidebar</div>';
+                document.getElementById('clusterTitle').textContent = '📂 Select a person';
+                document.getElementById('imageBadge').textContent = '0 images';
+                currentCluster = null;
+            }
+        }
+        
+        renderClusters();
+        updateStats();
+
+    } else {
+        showStatus(`❌ ${result.error}`, 'error');
+    }
+}
+
+// ===== REFRESH =====
+async function refresh() {
+    showStatus('🔄 Refreshing...', 'info');
+    await loadClusters();
+    showStatus('✅ Refreshed', 'success');
+}
+
+// ===== FIND SIMILAR =====
+async function findSimilar() {
+    if (!currentCluster || selected.size === 0) {
+        showStatus('Select one or more images first.', 'info');
+        return;
+    }
+    showStatus(`🔍 Searching for similar clusters...`, 'info');
+    const resultsPanel = document.getElementById('similar-results');
+    resultsPanel.innerHTML = '<div class="empty" style="padding-top: 20px;">Searching...</div>';
+
+    try {
+        const response = await fetch('/api/find_similar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cluster: currentCluster,
+                images: Array.from(selected)
+            })
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Server error');
+        }
+        const results = await response.json();
+        renderSimilarClusters(results);
+        showStatus(`✅ Found ${results.length} similar clusters. Drop selected images onto any cluster on the right to move them.`, 'success');
+        
+        document.getElementById('similar-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        
+    } catch (e) {
+        showStatus(`❌ Error: ${e.message}`, 'error');
+        resultsPanel.innerHTML = '<div class="empty" style="padding-top: 20px;">Search failed.</div>';
+    }
+}
+
+function renderSimilarClusters(results) {
+    const panel = document.getElementById('similar-results');
+    if (!results || results.length === 0) {
+        panel.innerHTML = '<div class="empty" style="padding-top: 20px;">No similar clusters found.</div>';
+        return;
+    }
+    panel.innerHTML = results.map(res => `
+        <div class="cluster-item" 
+             onclick="selectCluster('${res.cluster}')"
+             ondragover="onSimilarDragOver(event)"
+             ondragleave="onSimilarDragLeave(event)"
+             ondrop="onDropOnSimilar(event, '${res.cluster}')"
+             style="cursor:pointer;">
+            <h4>${res.cluster}</h4>
+            <img class="cluster-preview" src="/preview/${res.cluster}" onerror="this.style.display='none'">
+            <div class="cluster-info">
+                <strong>Similarity: ${res.score.toFixed(3)}</strong><br>
+                ${res.count} images
+                <br><small style="color:#28a745; font-weight:bold;">⬇️ Drop selected images here</small>
+            </div>
+        </div>
+    `).join('');
+}
+
+// ===== KEYBOARD SHORTCUTS =====
+document.addEventListener('keydown', e => {
+    if (document.activeElement.tagName === 'INPUT') return;
+    if (e.ctrlKey && e.key === 'a') { e.preventDefault(); selectAll(); }
+    if (e.key === 'Escape') deselectAll();
+    if (e.ctrlKey && e.key === 's') { e.preventDefault(); exportLabels(); }
+});
+
+loadClusters();
+</script>
+</body>
+</html>

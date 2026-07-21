@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ReID Pipeline Dashboard</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: Arial; background:#f0f2f5; padding:20px; }
+        .container { max-width:1200px; margin:0 auto; }
+        h1 { color:#333; margin-bottom:10px; }
+        .subtitle { color:#666; margin-bottom:30px; }
+        .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+        .step-card { background:white; border-radius:10px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); border-top:4px solid #ccc; }
+        .step-card.step-1 { border-top-color:#2563eb; }
+        .step-card.step-2 { border-top-color:#7c3aed; }
+        .step-card.step-3 { border-top-color:#059669; }
+        .step-card h2 { font-size:18px; margin-bottom:5px; }
+        .step-card .status { font-size:13px; margin-bottom:10px; padding:4px 10px; border-radius:12px; display:inline-block; }
+        .status.not_started { background:#e5e7eb; color:#6b7280; }
+        .status.in_progress { background:#fef3c7; color:#92400e; }
+        .status.completed { background:#d1fae5; color:#065f46; }
+        .step-card .desc { color:#666; font-size:14px; margin:10px 0; }
+        .step-card .btn { display:inline-block; padding:8px 20px; background:#2563eb; color:white; text-decoration:none; border-radius:6px; font-size:14px; margin-top:10px; }
+        .step-card .btn:hover { opacity:0.8; }
+        .step-card .path-info { font-size:12px; color:#6b7280; margin-top:10px; padding:8px; background:#f9fafb; border-radius:4px; word-break:break-all; }
+        .config-summary { background:white; border-radius:10px; padding:15px; margin-bottom:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+        .config-summary h3 { font-size:14px; color:#666; margin-bottom:8px; }
+        .config-summary .row { display:flex; gap:20px; flex-wrap:wrap; font-size:13px; }
+        .config-summary .row span { color:#333; }
+        .btn-labeling { display:inline-block; padding:8px 20px; background:#059669; color:white; text-decoration:none; border-radius:6px; font-size:14px; margin-top:10px; }
+        .btn-labeling:hover { opacity:0.8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 ReID Pipeline</h1>
+        <p class="subtitle">3-step workflow: Extract Features → Cluster → Label Data</p>
+        
+        <div class="config-summary">
+            <h3>📋 Current Configuration</h3>
+            <div class="row">
+                <div><strong>Dataset:</strong> <span>{{ config.steps.extraction.dataset_path or 'Not set' }}</span></div>
+                <div><strong>Features:</strong> <span>{{ config.steps.extraction.output_dir or 'Not extracted' }}</span></div>
+                <div><strong>Clusters:</strong> <span>{{ config.steps.clustering.output_dir or 'Not clustered' }}</span></div>
+            </div>
+        </div>
+        
+        <div class="steps">
+            <div class="step-card step-1">
+                <h2>1️⃣ Extract Features</h2>
+                <span class="status {{ config.steps.extraction.status }}">{{ config.steps.extraction.status.replace('_',' ').title() }}</span>
+                <p class="desc">Extract OSNet features from your dataset</p>
+                <a href="/dashboard/extract" class="btn">Start Extraction</a>
+                <div class="path-info">
+                    Model: {{ config.steps.extraction.model_path or 'Not set' }}<br>
+                    Dataset: {{ config.steps.extraction.dataset_path or 'Not set' }}
+                </div>
+            </div>
+            
+            <div class="step-card step-2">
+                <h2>2️⃣ Cluster Features</h2>
+                <span class="status {{ config.steps.clustering.status }}">{{ config.steps.clustering.status.replace('_',' ').title() }}</span>
+                <p class="desc">Cluster features using FAISS K-Means or Agglomerative</p>
+                <a href="/dashboard/cluster" class="btn">Start Clustering</a>
+                <div class="path-info">
+                    Method: {{ config.steps.clustering.method or 'Not set' }}<br>
+                    Output: {{ config.steps.clustering.output_dir or 'Not set' }}
+                </div>
+            </div>
+            
+            <div class="step-card step-3">
+                <h2>3️⃣ Label Data</h2>
+                <span class="status {{ config.steps.labeling.status }}">{{ config.steps.labeling.status.replace('_',' ').title() }}</span>
+                <p class="desc">Interactive labeling tool with drag & drop</p>
+                <a href="/" class="btn-labeling">Open Labeling Tool</a>
+                <div class="path-info">
+                    Dataset: {{ config.steps.labeling.dataset_path or 'Not set' }}
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
