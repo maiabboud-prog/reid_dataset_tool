@@ -10,7 +10,7 @@ import sys
 import gc
 
 # Import config to get CLUSTER_PATH
-from config import CLUSTER_PATH
+from config import CLUSTER_PATH, BASE_PATH
 
 # Import extraction and clustering functions
 from extraction import extract_features, get_image_paths, is_valid_image, extraction_state
@@ -72,6 +72,10 @@ def register_dashboard_routes(app):
         if not dataset_path or dataset_path == "":
             dataset_path = str(CLUSTER_PATH)
         
+        # Also ensure features are loaded
+        from features import load_features
+        load_features()
+        
         config['steps']['labeling']['status'] = 'in_progress'
         save_config(config)
         
@@ -93,6 +97,11 @@ def register_dashboard_routes(app):
         
         if not model_path or not dataset_path or not output_dir:
             return jsonify({'success': False, 'error': 'Missing required parameters'}), 400
+        
+        # Make paths absolute if relative
+        model_path = str(Path(model_path))
+        dataset_path = str(Path(dataset_path))
+        output_dir = str(Path(output_dir))
         
         config = load_config()
         config['steps']['extraction'].update({
@@ -125,9 +134,30 @@ def register_dashboard_routes(app):
                         extraction_state['message'] = 'Complete!'
                         config = load_config()
                         config['steps']['extraction']['status'] = 'completed'
-                        config['steps']['clustering']['features_file'] = str(Path(output_dir) / 'features_dataset.dat')
-                        config['steps']['clustering']['paths_file'] = str(Path(output_dir) / 'features_dataset_paths.json')
-                        config['steps']['clustering']['meta_file'] = str(Path(output_dir) / 'features_dataset_meta.json')
+                        
+                        # Store paths for clustering step
+                        features_file = result.get('features_file')
+                        paths_file = result.get('paths_file')
+                        meta_file = result.get('meta_file')
+                        
+                        if features_file and paths_file:
+                            # Make paths absolute
+                            features_file = str(Path(features_file).absolute())
+                            paths_file = str(Path(paths_file).absolute())
+                            if meta_file:
+                                meta_file = str(Path(meta_file).absolute())
+                            
+                            config['steps']['clustering']['features_file'] = features_file
+                            config['steps']['clustering']['paths_file'] = paths_file
+                            if meta_file:
+                                config['steps']['clustering']['meta_file'] = meta_file
+                            
+                            # Also update labeling features
+                            config['steps']['labeling']['features_dat'] = features_file
+                            config['steps']['labeling']['features_json'] = paths_file
+                            if meta_file:
+                                config['steps']['labeling']['meta_file'] = meta_file
+                        
                         save_config(config)
                     else:
                         extraction_state['error'] = result.get('error', 'Unknown error')
@@ -177,6 +207,64 @@ def register_dashboard_routes(app):
         save_config(config)
         return jsonify({'success': True})
     
+    @app.route('/api/dashboard/cluster/save_config', methods=['POST'])
+    def api_dashboard_cluster_save_config():
+        """Save clustering configuration without starting clustering"""
+        data = request.json
+        
+        # Get all clustering parameters
+        features_file = data.get('features_file', '')
+        paths_file = data.get('paths_file', '')
+        meta_file = data.get('meta_file', '')
+        output_dir = data.get('output_dir', '')
+        algorithm = data.get('algorithm', 'faiss')
+        parameters = data.get('parameters', {})
+        
+        # Validate required fields
+        if not features_file or not paths_file or not output_dir:
+            return jsonify({
+                'success': False, 
+                'error': 'Missing required parameters: features_file, paths_file, and output_dir are required'
+            }), 400
+        
+        # Convert to absolute paths
+        features_file = str(Path(features_file).absolute())
+        paths_file = str(Path(paths_file).absolute())
+        if meta_file:
+            meta_file = str(Path(meta_file).absolute())
+        output_dir = str(Path(output_dir).absolute())
+        
+        # Load current config
+        config = load_config()
+        
+        # Update clustering configuration
+        config['steps']['clustering'].update({
+            'features_file': features_file,
+            'paths_file': paths_file,
+            'meta_file': meta_file,
+            'output_dir': output_dir,
+            'method': algorithm,
+            'parameters': parameters,
+            'status': 'configured'  # Mark as configured but not started
+        })
+        
+        # Also update labeling features reference
+        config['steps']['labeling']['features_dat'] = features_file
+        config['steps']['labeling']['features_json'] = paths_file
+        if meta_file:
+            config['steps']['labeling']['meta_file'] = meta_file
+        
+        # Save config
+        save_config(config)
+        
+        print(f"✅ Clustering configuration saved:")
+        print(f"   Features: {features_file}")
+        print(f"   Paths: {paths_file}")
+        print(f"   Output: {output_dir}")
+        print(f"   Algorithm: {algorithm}")
+        
+        return jsonify({'success': True})
+    
     @app.route('/api/dashboard/cluster/start', methods=['POST'])
     def api_dashboard_cluster_start():
         global clustering_state
@@ -194,6 +282,13 @@ def register_dashboard_routes(app):
         
         if not features_file or not paths_file or not output_dir:
             return jsonify({'success': False, 'error': 'Missing required parameters'}), 400
+        
+        # Make paths absolute
+        features_file = str(Path(features_file).absolute())
+        paths_file = str(Path(paths_file).absolute())
+        if meta_file:
+            meta_file = str(Path(meta_file).absolute())
+        output_dir = str(Path(output_dir).absolute())
         
         config = load_config()
         config['steps']['clustering'].update({
@@ -236,6 +331,8 @@ def register_dashboard_routes(app):
                 
                 n = len(features)
                 print(f"📊 Clustering {n} images with algorithm: {algorithm}")
+                print(f"📂 Features from: {features_file}")
+                print(f"📂 Output to: {output_dir}")
                 
                 if algorithm == 'faiss':
                     num_clusters = int(parameters.get('k', 250))
@@ -275,14 +372,27 @@ def register_dashboard_routes(app):
                 clustering_state['message'] = 'Complete!'
                 clustering_state['elapsed'] = time.time() - clustering_state['start_time']
                 
+                # Update config with cluster output path
                 config = load_config()
                 config['steps']['clustering']['status'] = 'completed'
                 config['steps']['labeling']['dataset_path'] = output_path
                 config['steps']['labeling']['status'] = 'ready'
+                
+                # Ensure features are linked to labeling step
+                config['steps']['labeling']['features_dat'] = features_file
+                config['steps']['labeling']['features_json'] = paths_file
+                if meta_file:
+                    config['steps']['labeling']['meta_file'] = meta_file
+                
                 save_config(config)
+                
+                # Reload features for labeling
+                from features import load_features
+                load_features()
                 
                 print(f"✅ Clustering completed in {clustering_state['elapsed']:.2f}s! Output: {output_path}")
                 print(f"📂 Labeling dataset: {output_path}")
+                print(f"📂 Features file: {features_file}")
                 
             except Exception as e:
                 import traceback
@@ -391,6 +501,7 @@ def register_dashboard_routes(app):
             result['person_folders_count'] = len(person_folders)
         
         return jsonify(result)
+    
     @app.route('/api/dashboard/set_features', methods=['POST'])
     def api_dashboard_set_features():
         """Set the features files for labeling"""
@@ -417,3 +528,24 @@ def register_dashboard_routes(app):
         load_features()
         
         return jsonify({'success': True})
+    
+    @app.route('/api/dashboard/current_status')
+    def api_dashboard_current_status():
+        """Get current status of all steps"""
+        config = load_config()
+        return jsonify({
+            'extraction': {
+                'status': config['steps']['extraction']['status'],
+                'output_dir': config['steps']['extraction'].get('output_dir', '')
+            },
+            'clustering': {
+                'status': config['steps']['clustering']['status'],
+                'output_dir': config['steps']['clustering'].get('output_dir', ''),
+                'features_file': config['steps']['clustering'].get('features_file', '')
+            },
+            'labeling': {
+                'status': config['steps']['labeling']['status'],
+                'dataset_path': config['steps']['labeling'].get('dataset_path', ''),
+                'features_dat': config['steps']['labeling'].get('features_dat', '')
+            }
+        })

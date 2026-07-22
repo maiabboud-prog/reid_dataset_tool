@@ -14,7 +14,7 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
 
 # Import config FIRST to ensure paths are defined
-from config import CLUSTER_PATH, get_current_cluster_path
+from config import CLUSTER_PATH, get_current_cluster_path, get_features_paths
 
 # Import and register routes
 from routes import register_routes
@@ -29,16 +29,21 @@ from features import load_features
 
 if __name__ == '__main__':
     # Load features - this will now use dynamic paths from config
+    print("\n📂 Loading features for labeling...")
     load_features()
     
     # Get the current cluster path from config
     current_path = get_current_cluster_path()
+    
+    # Get features path for info
+    features_dat, features_json = get_features_paths()
     
     print(f"\n🚀 ReID Labeling Tool")
     if not current_path.exists():
         print(f"⚠️  Warning: Cluster path not found. Creating directory...")
         current_path.mkdir(parents=True, exist_ok=True)
     print(f"📂 Serving from: {current_path}")
+    print(f"📂 Features from: {features_dat}")
     print(f"🌐 Dashboard: http://localhost:5000/dashboard")
     print(f"🌐 Labeling: http://localhost:5000/")
     print(f"🌐 http://localhost:5000\n")

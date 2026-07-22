@@ -10,7 +10,7 @@
         .subtitle { color:#666; margin-bottom:20px; }
         .form-group { margin-bottom:15px; }
         label { display:block; font-weight:bold; margin-bottom:5px; font-size:14px; }
-        input[type="text"], input[type="number"], select { width:100%; padding:8px 12px; border:1px solid #ddd; border-radius:4px; font-size:14px; }
+        input[type="text"], input[type="number"], select { width:100%; padding:8px 12px; border:1px solid #ddd; border-radius:4px; font-size:14px; box-sizing:border-box; }
         .btn { padding:10px 24px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:bold; margin-right:10px; }
         .btn-primary { background:#7c3aed; color:white; }
         .btn-primary:hover { opacity:0.8; }
@@ -24,12 +24,25 @@
         .progress-bar { width:100%; height:20px; background:#e5e7eb; border-radius:10px; overflow:hidden; }
         .progress-fill { height:100%; background:#7c3aed; transition:width 0.3s; width:0%; }
         .progress-text { margin-top:8px; font-size:13px; color:#666; }
-        .btn-group { margin-top:20px; }
+        .btn-group { margin-top:20px; display:flex; gap:10px; flex-wrap:wrap; }
         .btn-back { display:inline-block; padding:8px 16px; background:#6b7280; color:white; text-decoration:none; border-radius:6px; font-size:13px; margin-bottom:15px; }
         .btn-back:hover { opacity:0.8; }
         .param-group { padding:10px; background:#f9fafb; border-radius:4px; margin-bottom:10px; }
         .param-group.hidden { display:none; }
         .info-box { background:#e8f4fd; padding:10px; border-radius:4px; margin-bottom:15px; font-size:13px; color:#1a56db; }
+        .status-badge { display:inline-block; padding:4px 12px; border-radius:12px; font-size:13px; font-weight:bold; margin-left:10px; }
+        .status-badge.not-started { background:#e5e7eb; color:#6b7280; }
+        .status-badge.configured { background:#fef3c7; color:#92400e; }
+        .status-badge.in_progress { background:#cce5ff; color:#004085; }
+        .status-badge.completed { background:#d1fae5; color:#065f46; }
+        .status-badge.failed { background:#f8d7da; color:#721c24; }
+        #save_status { padding:10px; border-radius:6px; margin-top:10px; font-weight:600; display:none; }
+        #save_status.success { background:#d4edda; color:#155724; display:block; }
+        #save_status.error { background:#f8d7da; color:#721c24; display:block; }
+        #save_status.info { background:#cce5ff; color:#004085; display:block; }
+        .config-actions { display:flex; gap:10px; margin-top:15px; flex-wrap:wrap; }
+        .current-config { background:#f8f9fa; padding:10px; border-radius:4px; margin-top:10px; font-size:13px; color:#666; }
+        .current-config strong { color:#333; }
     </style>
 </head>
 <body>
@@ -38,22 +51,27 @@
         <h1>🔮 Cluster Features</h1>
         <p class="subtitle">Cluster extracted features using FAISS K-Means or Agglomerative</p>
         
+        <div style="display:flex; align-items:center; margin-bottom:15px;">
+            <span style="font-weight:bold;">Status:</span>
+            <span class="status-badge not-started" id="statusBadge">Not Started</span>
+        </div>
+        
         <div class="info-box">
             💡 For large datasets (10,000+ images), Agglomerative clustering will use sampling for performance.
         </div>
         
         <form id="clusterForm">
             <div class="form-group">
-                <label>Features File (.dat)</label>
-                <input type="text" id="featuresFile" placeholder="C:/path/to/features.dat" value="C:/Users/Manar/Documents/REID/Cluster_id/extracted_features/2026041316/features_dataset.dat">
+                <label>Features File (.dat) *</label>
+                <input type="text" id="features_file" placeholder="C:/path/to/features.dat" value="C:/Users/Manar/Documents/REID/Cluster_id/extracted_features/2026041316/features_dataset.dat">
             </div>
             <div class="form-group">
-                <label>Paths File (.json)</label>
-                <input type="text" id="pathsFile" placeholder="C:/path/to/paths.json" value="C:/Users/Manar/Documents/REID/Cluster_id/extracted_features/2026041316/features_dataset_paths.json">
+                <label>Paths File (.json) *</label>
+                <input type="text" id="paths_file" placeholder="C:/path/to/paths.json" value="C:/Users/Manar/Documents/REID/Cluster_id/extracted_features/2026041316/features_dataset_paths.json">
             </div>
             <div class="form-group">
                 <label>Meta File (.json) - Optional</label>
-                <input type="text" id="metaFile" placeholder="C:/path/to/meta.json" value="C:/Users/Manar/Documents/REID/Cluster_id/extracted_features/2026041316/features_dataset_meta.json">
+                <input type="text" id="meta_file" placeholder="C:/path/to/meta.json" value="C:/Users/Manar/Documents/REID/Cluster_id/extracted_features/2026041316/features_dataset_meta.json">
             </div>
             
             <div class="form-group">
@@ -68,18 +86,18 @@
             <div id="faissParams" class="param-group hidden">
                 <div class="form-group">
                     <label>Number of Clusters (K)</label>
-                    <input type="number" id="faissK" value="250" min="2">
+                    <input type="number" id="faiss_k" value="250" min="2">
                 </div>
                 <div class="form-group">
                     <label>Random Seed</label>
-                    <input type="number" id="faissSeed" value="42">
+                    <input type="number" id="faiss_seed" value="42">
                 </div>
                 <div class="form-group">
                     <label>Iterations</label>
-                    <input type="number" id="faissIter" value="100" min="10">
+                    <input type="number" id="faiss_iter" value="100" min="10">
                 </div>
                 <div class="form-group">
-                    <label><input type="checkbox" id="faissGpu"> Use GPU (if available)</label>
+                    <label><input type="checkbox" id="faiss_gpu"> Use GPU (if available)</label>
                 </div>
             </div>
             
@@ -87,12 +105,12 @@
             <div id="aggParams" class="param-group">
                 <div class="form-group">
                     <label>Distance Threshold</label>
-                    <input type="number" id="aggThreshold" value="0.4" step="0.05" min="0.1" max="2.0">
+                    <input type="number" id="agg_threshold" value="0.4" step="0.05" min="0.1" max="2.0">
                     <small>Higher = fewer clusters (for 18k images, try 0.3-0.6)</small>
                 </div>
                 <div class="form-group">
                     <label>Linkage</label>
-                    <select id="aggLinkage">
+                    <select id="agg_linkage">
                         <option value="complete">Complete</option>
                         <option value="average">Average</option>
                         <option value="single">Single</option>
@@ -101,7 +119,7 @@
                 </div>
                 <div class="form-group">
                     <label>Affinity</label>
-                    <select id="aggAffinity">
+                    <select id="agg_affinity">
                         <option value="cosine">Cosine</option>
                         <option value="euclidean">Euclidean</option>
                         <option value="manhattan">Manhattan</option>
@@ -110,13 +128,23 @@
             </div>
             
             <div class="form-group">
-                <label>Output Directory</label>
-                <input type="text" id="outputDir" placeholder="./clustered_dataset/" value="./clustered_dataset/2026041316/">
+                <label>Output Directory *</label>
+                <input type="text" id="output_dir" placeholder="./clustered_dataset/" value="./clustered_dataset/2026041316/">
             </div>
             
-            <div class="btn-group">
+            <div class="config-actions">
+                <button type="button" class="btn btn-secondary" onclick="saveClusteringConfig()">💾 Save Configuration</button>
                 <button type="button" class="btn btn-primary" onclick="startClustering()">▶ Start Clustering</button>
-                <button type="button" class="btn btn-secondary" onclick="saveConfig()">💾 Save Config</button>
+            </div>
+            
+            <div id="save_status"></div>
+            
+            <div class="current-config" id="currentConfigDisplay">
+                <strong>Current Configuration:</strong><br>
+                Features: <span id="display_features">Not set</span><br>
+                Paths: <span id="display_paths">Not set</span><br>
+                Output: <span id="display_output">Not set</span><br>
+                Algorithm: <span id="display_algorithm">Not set</span>
             </div>
         </form>
         
@@ -138,33 +166,203 @@
             document.getElementById('aggParams').classList.toggle('hidden', alg !== 'agg');
         }
         
+        // ===== SAVE CONFIGURATION =====
+        async function saveClusteringConfig() {
+            const featuresFile = document.getElementById('features_file').value.trim();
+            const pathsFile = document.getElementById('paths_file').value.trim();
+            const outputDir = document.getElementById('output_dir').value.trim();
+            
+            // Validate required fields
+            if (!featuresFile) {
+                showSaveStatus('Please enter Features File path', 'error');
+                return;
+            }
+            if (!pathsFile) {
+                showSaveStatus('Please enter Paths File path', 'error');
+                return;
+            }
+            if (!outputDir) {
+                showSaveStatus('Please enter Output Directory', 'error');
+                return;
+            }
+            
+            const algorithm = document.getElementById('algorithm').value;
+            
+            // Build parameters based on algorithm
+            let parameters = {};
+            if (algorithm === 'faiss') {
+                parameters = {
+                    k: parseInt(document.getElementById('faiss_k').value) || 250,
+                    seed: parseInt(document.getElementById('faiss_seed').value) || 42,
+                    iterations: parseInt(document.getElementById('faiss_iter').value) || 100,
+                    gpu: document.getElementById('faiss_gpu').checked
+                };
+            } else {
+                parameters = {
+                    threshold: parseFloat(document.getElementById('agg_threshold').value) || 0.4,
+                    linkage: document.getElementById('agg_linkage').value,
+                    affinity: document.getElementById('agg_affinity').value
+                };
+            }
+            
+            const formData = {
+                features_file: featuresFile,
+                paths_file: pathsFile,
+                meta_file: document.getElementById('meta_file').value.trim() || '',
+                output_dir: outputDir,
+                algorithm: algorithm,
+                parameters: parameters
+            };
+            
+            showSaveStatus('Saving configuration...', 'info');
+            
+            try {
+                const response = await fetch('/api/dashboard/cluster/save_config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSaveStatus('✅ Configuration saved successfully!', 'success');
+                    
+                    // Update status badge
+                    const badge = document.getElementById('statusBadge');
+                    badge.textContent = 'Configured';
+                    badge.className = 'status-badge configured';
+                    
+                    // Update display
+                    document.getElementById('display_features').textContent = featuresFile;
+                    document.getElementById('display_paths').textContent = pathsFile;
+                    document.getElementById('display_output').textContent = outputDir;
+                    document.getElementById('display_algorithm').textContent = algorithm.toUpperCase();
+                    
+                } else {
+                    showSaveStatus('❌ Save failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showSaveStatus('❌ Error saving configuration: ' + error.message, 'error');
+            }
+        }
+        
+        function showSaveStatus(message, type) {
+            const statusDiv = document.getElementById('save_status');
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+            statusDiv.style.display = 'block';
+            
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        // ===== LOAD CONFIGURATION =====
+        async function loadClusteringConfig() {
+            try {
+                const response = await fetch('/api/dashboard/config/load');
+                const config = await response.json();
+                const clustering = config.steps.clustering || {};
+                
+                // Populate fields with existing values
+                if (clustering.features_file) {
+                    document.getElementById('features_file').value = clustering.features_file;
+                    document.getElementById('display_features').textContent = clustering.features_file;
+                }
+                if (clustering.paths_file) {
+                    document.getElementById('paths_file').value = clustering.paths_file;
+                    document.getElementById('display_paths').textContent = clustering.paths_file;
+                }
+                if (clustering.meta_file) {
+                    document.getElementById('meta_file').value = clustering.meta_file;
+                }
+                if (clustering.output_dir) {
+                    document.getElementById('output_dir').value = clustering.output_dir;
+                    document.getElementById('display_output').textContent = clustering.output_dir;
+                }
+                if (clustering.method) {
+                    document.getElementById('algorithm').value = clustering.method;
+                    document.getElementById('display_algorithm').textContent = clustering.method.toUpperCase();
+                    toggleParams();
+                }
+                if (clustering.parameters) {
+                    const params = clustering.parameters;
+                    if (params.k) document.getElementById('faiss_k').value = params.k;
+                    if (params.seed) document.getElementById('faiss_seed').value = params.seed;
+                    if (params.iterations) document.getElementById('faiss_iter').value = params.iterations;
+                    if (params.gpu) document.getElementById('faiss_gpu').checked = params.gpu;
+                    if (params.threshold) document.getElementById('agg_threshold').value = params.threshold;
+                    if (params.linkage) document.getElementById('agg_linkage').value = params.linkage;
+                    if (params.affinity) document.getElementById('agg_affinity').value = params.affinity;
+                }
+                
+                // Update status badge
+                const badge = document.getElementById('statusBadge');
+                if (clustering.status === 'completed') {
+                    badge.textContent = 'Completed ✅';
+                    badge.className = 'status-badge completed';
+                } else if (clustering.status === 'in_progress') {
+                    badge.textContent = 'Running...';
+                    badge.className = 'status-badge in_progress';
+                } else if (clustering.status === 'configured' || 
+                          (clustering.features_file && clustering.paths_file && clustering.output_dir)) {
+                    badge.textContent = 'Configured';
+                    badge.className = 'status-badge configured';
+                } else {
+                    badge.textContent = 'Not Started';
+                    badge.className = 'status-badge not-started';
+                }
+                
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+        
+        // ===== START CLUSTERING =====
         async function startClustering() {
             const data = {
-                features_file: document.getElementById('featuresFile').value,
-                paths_file: document.getElementById('pathsFile').value,
-                meta_file: document.getElementById('metaFile').value || null,
+                features_file: document.getElementById('features_file').value.trim(),
+                paths_file: document.getElementById('paths_file').value.trim(),
+                meta_file: document.getElementById('meta_file').value.trim() || null,
                 algorithm: document.getElementById('algorithm').value,
-                output_dir: document.getElementById('outputDir').value,
+                output_dir: document.getElementById('output_dir').value.trim(),
                 parameters: {}
             };
             
+            // Validate
+            if (!data.features_file || !data.paths_file || !data.output_dir) {
+                alert('Please fill in all required fields (Features File, Paths File, Output Directory)');
+                return;
+            }
+            
             if (data.algorithm === 'faiss') {
                 data.parameters = {
-                    k: parseInt(document.getElementById('faissK').value),
-                    seed: parseInt(document.getElementById('faissSeed').value),
-                    iterations: parseInt(document.getElementById('faissIter').value),
-                    gpu: document.getElementById('faissGpu').checked
+                    k: parseInt(document.getElementById('faiss_k').value) || 250,
+                    seed: parseInt(document.getElementById('faiss_seed').value) || 42,
+                    iterations: parseInt(document.getElementById('faiss_iter').value) || 100,
+                    gpu: document.getElementById('faiss_gpu').checked
                 };
             } else {
                 data.parameters = {
-                    threshold: parseFloat(document.getElementById('aggThreshold').value),
-                    linkage: document.getElementById('aggLinkage').value,
-                    affinity: document.getElementById('aggAffinity').value
+                    threshold: parseFloat(document.getElementById('agg_threshold').value) || 0.4,
+                    linkage: document.getElementById('agg_linkage').value,
+                    affinity: document.getElementById('agg_affinity').value
                 };
             }
             
             document.getElementById('progressSection').style.display = 'block';
             clusteringRunning = true;
+            
+            // Update status
+            const badge = document.getElementById('statusBadge');
+            badge.textContent = 'Running...';
+            badge.className = 'status-badge in_progress';
             
             try {
                 const response = await fetch('/api/dashboard/cluster/start', {
@@ -178,10 +376,14 @@
                 } else {
                     alert('Error: ' + (result.error || 'Unknown error'));
                     clusteringRunning = false;
+                    badge.textContent = 'Failed';
+                    badge.className = 'status-badge failed';
                 }
             } catch(e) {
                 alert('Error: ' + e.message);
                 clusteringRunning = false;
+                badge.textContent = 'Failed';
+                badge.className = 'status-badge failed';
             }
         }
         
@@ -195,6 +397,9 @@
                     document.getElementById('progressText').textContent = '❌ ' + data.error;
                     document.getElementById('progressFill').style.width = '0%';
                     clusteringRunning = false;
+                    const badge = document.getElementById('statusBadge');
+                    badge.textContent = 'Failed';
+                    badge.className = 'status-badge failed';
                     return;
                 }
                 
@@ -214,6 +419,12 @@
                 } else if (data.percent >= 100) {
                     document.getElementById('progressText').textContent = '✅ Done! ' + data.clusters + ' clusters formed';
                     clusteringRunning = false;
+                    const badge = document.getElementById('statusBadge');
+                    badge.textContent = 'Completed ✅';
+                    badge.className = 'status-badge completed';
+                    
+                    // Reload config to update display
+                    loadClusteringConfig();
                 }
             } catch(e) {
                 console.error(e);
@@ -226,49 +437,14 @@
             clusteringRunning = false;
             await fetch('/api/dashboard/cluster/cancel', {method: 'POST'});
             document.getElementById('progressText').textContent = '⛔ Cancelled';
-        }
-        
-        async function saveConfig() {
-            const data = {
-                method: document.getElementById('algorithm').value,
-                output_dir: document.getElementById('outputDir').value,
-                parameters: {}
-            };
-            
-            if (data.method === 'faiss') {
-                data.parameters = {
-                    k: parseInt(document.getElementById('faissK').value),
-                    seed: parseInt(document.getElementById('faissSeed').value),
-                    iterations: parseInt(document.getElementById('faissIter').value),
-                    gpu: document.getElementById('faissGpu').checked
-                };
-            } else {
-                data.parameters = {
-                    threshold: parseFloat(document.getElementById('aggThreshold').value),
-                    linkage: document.getElementById('aggLinkage').value,
-                    affinity: document.getElementById('aggAffinity').value
-                };
-            }
-            
-            const configData = {
-                features_file: document.getElementById('featuresFile').value,
-                paths_file: document.getElementById('pathsFile').value,
-                meta_file: document.getElementById('metaFile').value || null,
-                method: document.getElementById('algorithm').value,
-                output_dir: document.getElementById('outputDir').value,
-                parameters: data.parameters
-            };
-            
-            await fetch('/api/dashboard/config/save', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({step: 'clustering', data: configData})
-            });
-            alert('Configuration saved!');
+            const badge = document.getElementById('statusBadge');
+            badge.textContent = 'Cancelled';
+            badge.className = 'status-badge not-started';
         }
         
         // Initialize
         toggleParams();
+        loadClusteringConfig();
     </script>
 </body>
 </html>
