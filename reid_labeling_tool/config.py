@@ -57,38 +57,122 @@ def get_features_paths():
     """Get feature file paths from dashboard config or use defaults."""
     config = load_dashboard_config()
     
-    # Try to get from labeling config
-    features_dat = config.get('steps', {}).get('labeling', {}).get('features_dat', '')
-    features_json = config.get('steps', {}).get('labeling', {}).get('features_json', '')
+    # First priority: Try to get from clustering step (the features used for clustering)
+    clustering_features = config.get('steps', {}).get('clustering', {}).get('features_file', '')
+    clustering_paths = config.get('steps', {}).get('clustering', {}).get('paths_file', '')
     
-    if features_dat and features_json:
-        return Path(features_dat), Path(features_json)
+    # Second priority: Try from extraction step
+    extraction_output = config.get('steps', {}).get('extraction', {}).get('output_dir', '')
     
-    # Try to get from clustering config (if features were extracted)
-    features_dat = config.get('steps', {}).get('clustering', {}).get('features_file', '')
-    features_json = config.get('steps', {}).get('clustering', {}).get('paths_file', '')
+    if clustering_features and clustering_paths:
+        features_dat = Path(clustering_features)
+        features_json = Path(clustering_paths)
+        if features_dat.exists() and features_json.exists():
+            print(f"📂 Using features from clustering: {features_dat}")
+            return features_dat, features_json
     
-    if features_dat and features_json:
-        return Path(features_dat), Path(features_json)
+    # If clustering step has output_dir, look for features there
+    if extraction_output:
+        output_dir = Path(extraction_output)
+        if not output_dir.is_absolute():
+            output_dir = BASE_PATH / output_dir
+        features_dat = output_dir / "features_dataset.dat"
+        features_json = output_dir / "features_dataset_paths.json"
+        if features_dat.exists() and features_json.exists():
+            print(f"📂 Using features from extraction output: {features_dat}")
+            return features_dat, features_json
+    
+    # Then try from labeling step
+    labeling_features = config.get('steps', {}).get('labeling', {}).get('features_dat', '')
+    labeling_paths = config.get('steps', {}).get('labeling', {}).get('features_json', '')
+    
+    if labeling_features and labeling_paths:
+        features_dat = Path(labeling_features)
+        features_json = Path(labeling_paths)
+        if features_dat.exists() and features_json.exists():
+            print(f"📂 Using features from labeling: {features_dat}")
+            return features_dat, features_json
     
     # Return defaults
+    print(f"📂 Using default features: {FEATURES_DAT}")
     return FEATURES_DAT, FEATURES_JSON
 
 def update_features_paths(features_dat, features_json, meta_file=None):
     """Update feature paths in dashboard config."""
     config = load_dashboard_config()
+    
+    # Update in clustering step (where features were used)
+    if 'clustering' not in config['steps']:
+        config['steps']['clustering'] = {}
+    config['steps']['clustering']['features_file'] = str(features_dat)
+    config['steps']['clustering']['paths_file'] = str(features_json)
+    if meta_file:
+        config['steps']['clustering']['meta_file'] = str(meta_file)
+    
+    # Also update in labeling step for reference
     if 'labeling' not in config['steps']:
         config['steps']['labeling'] = {}
     config['steps']['labeling']['features_dat'] = str(features_dat)
     config['steps']['labeling']['features_json'] = str(features_json)
     if meta_file:
         config['steps']['labeling']['meta_file'] = str(meta_file)
+    
     save_dashboard_config(config)
     
     # Update global variables
     global FEATURES_DAT, FEATURES_JSON
     FEATURES_DAT = Path(features_dat)
     FEATURES_JSON = Path(features_json)
+
+def get_meta_file():
+    """Get the meta file path from dashboard config."""
+    config = load_dashboard_config()
+    
+    # Try from clustering first
+    meta_file = config.get('steps', {}).get('clustering', {}).get('meta_file', '')
+    if meta_file and Path(meta_file).exists():
+        return Path(meta_file)
+    
+    # Try from extraction output
+    extraction_output = config.get('steps', {}).get('extraction', {}).get('output_dir', '')
+    if extraction_output:
+        output_dir = Path(extraction_output)
+        if not output_dir.is_absolute():
+            output_dir = BASE_PATH / output_dir
+        meta_file = output_dir / "features_dataset_meta.json"
+        if meta_file.exists():
+            return meta_file
+    
+    # Try from labeling
+    meta_file = config.get('steps', {}).get('labeling', {}).get('meta_file', '')
+    if meta_file and Path(meta_file).exists():
+        return Path(meta_file)
+    
+    return None
+
+def get_cluster_output_dir():
+    """Get the cluster output directory from dashboard config."""
+    config = load_dashboard_config()
+    
+    # Try from clustering step
+    cluster_output = config.get('steps', {}).get('clustering', {}).get('output_dir', '')
+    if cluster_output:
+        path_obj = Path(cluster_output)
+        if not path_obj.is_absolute():
+            path_obj = BASE_PATH / path_obj
+        if path_obj.exists():
+            return path_obj
+    
+    # Try from labeling step
+    labeling_path = config.get('steps', {}).get('labeling', {}).get('dataset_path', '')
+    if labeling_path:
+        path_obj = Path(labeling_path)
+        if not path_obj.is_absolute():
+            path_obj = BASE_PATH / path_obj
+        if path_obj.exists():
+            return path_obj
+    
+    return CLUSTER_PATH
 
 # ===== COMPATIBILITY FUNCTIONS FOR routes.py and features.py =====
 
@@ -102,7 +186,7 @@ def save_state(config):
 
 def get_cluster_path():
     """Get the current cluster path (compatibility function)."""
-    return get_current_cluster_path()
+    return get_cluster_output_dir()
 
 def load_features_state():
     """Load features state from file."""
