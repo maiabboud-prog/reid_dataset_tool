@@ -248,20 +248,37 @@ def register_dashboard_routes(app):
             'status': 'configured'  # Mark as configured but not started
         })
         
-        # Also update labeling features reference
+        # ===== FIX: Sync to Labeling Page =====
+        # Update labeling features reference
         config['steps']['labeling']['features_dat'] = features_file
         config['steps']['labeling']['features_json'] = paths_file
         if meta_file:
             config['steps']['labeling']['meta_file'] = meta_file
         
+        # CRITICAL: Sync the output directory to labeling dataset path
+        config['steps']['labeling']['dataset_path'] = output_dir
+        
+        # Update labeling status to indicate data is ready
+        # Check if output_dir has person_ folders
+        output_path = Path(output_dir)
+        if output_path.exists() and output_path.is_dir():
+            person_folders = [d for d in output_path.iterdir() if d.is_dir() and d.name.startswith('person_')]
+            if person_folders:
+                config['steps']['labeling']['status'] = 'ready'
+            else:
+                config['steps']['labeling']['status'] = 'configured'  # No clusters yet
+        else:
+            config['steps']['labeling']['status'] = 'configured'
+        
         # Save config
         save_config(config)
         
-        print(f"✅ Clustering configuration saved:")
+        print(f"✅ Clustering configuration saved and synced to labeling:")
         print(f"   Features: {features_file}")
         print(f"   Paths: {paths_file}")
         print(f"   Output: {output_dir}")
-        print(f"   Algorithm: {algorithm}")
+        print(f"   Labeling dataset: {config['steps']['labeling']['dataset_path']}")
+        print(f"   Labeling status: {config['steps']['labeling']['status']}")
         
         return jsonify({'success': True})
     
@@ -431,6 +448,19 @@ def register_dashboard_routes(app):
         config['steps']['clustering']['status'] = 'cancelled'
         save_config(config)
         return jsonify({'success': True})
+    
+    @app.route('/api/dashboard/ensure_features_loaded', methods=['POST'])
+    def api_dashboard_ensure_features_loaded():
+        """Ensure features are loaded for the labeling page"""
+        from features import load_features
+        
+        try:
+            # Force reload features from current config
+            load_features()
+            return jsonify({'success': True, 'loaded': True})
+        except Exception as e:
+            print(f"Error loading features: {e}")
+            return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/dashboard/config/save', methods=['POST'])
     def api_dashboard_config_save():

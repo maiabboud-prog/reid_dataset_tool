@@ -107,28 +107,38 @@ function previousCluster() {
 }
 
 // ===== LOAD CLUSTERS =====
+// In index.html, after loadClusters() call
 async function loadClusters() {
     try {
+        // Also reload features if needed
+        await reloadFeatures();
+        
         const r = await fetch('/api/clusters');
         clusterData = await r.json();
         renderClusters();
-        if (currentCluster && !clusterData[currentCluster]) {
-            const keys = Object.keys(clusterData);
-            currentCluster = keys.length ? keys[0] : null;
-        }
-        if (currentCluster) {
-            selectCluster(currentCluster);
-        } else if (Object.keys(clusterData).length > 0) {
-            selectCluster(Object.keys(clusterData).sort((a,b) => parseInt(a.replace('person_','')) - parseInt(b.replace('person_','')))[0]);
-        }
-        else {
-            document.getElementById('imageGrid').innerHTML = '<div class="empty"><span class="icon">👈</span>Select a person from the sidebar</div>';
-            document.getElementById('clusterTitle').textContent = '📂 Select a person';
-            document.getElementById('imageBadge').textContent = '0 images';
-            updateNavButtons();
-        }
-        updateStats();
+        // ... rest of function
     } catch(e) { console.error(e); }
+}
+
+async function reloadFeatures() {
+    try {
+        // Get current config to see if features changed
+        const configResp = await fetch('/api/dashboard/config/load');
+        const config = await configResp.json();
+        
+        // Check if features file exists and is accessible
+        const featuresDat = config.steps.labeling?.features_dat;
+        if (featuresDat) {
+            // This will trigger feature reload in the backend
+            await fetch('/api/dashboard/ensure_features_loaded', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ force_reload: true })
+            });
+        }
+    } catch(e) {
+        console.error('Error reloading features:', e);
+    }
 }
 
 function reloadClusters() {
