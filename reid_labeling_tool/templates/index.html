@@ -59,6 +59,15 @@ let zoom = 120;
 let draggedFile = null;
 let dragSource = null;
 
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ===== NAVIGATION HELPERS =====
 function getSortedClusters() {
     return Object.keys(clusterData).sort((a, b) => 
@@ -257,30 +266,49 @@ function renderImages() {
     grid.innerHTML = allImages.map(img => `
         <div class="image-card ${selected.has(img)?'selected':''}" 
              draggable="true"
-             onclick="toggle('${img}')"
-             ondragstart="onDragStart(event,'${img}')"
+             data-img="${encodeURIComponent(img)}"
+             onclick="toggleByCard(this)"
+             ondragstart="onDragStart(event,'${encodeURIComponent(img)}')"
              ondragend="onDragEnd(event)">
-            <img src="/images/${currentCluster}/${img}" loading="lazy" alt="${img}" 
+            <img src="/images/${currentCluster}/${encodeURIComponent(img)}" loading="lazy" alt="${escapeHtml(img)}" 
                  onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%2210%22%3E❌%3C/text%3E%3C/svg%3E'">
-            <div class="name">${img}</div>
+            <div class="name">${escapeHtml(img)}</div>
             <div class="check">✓</div>
         </div>
     `).join('');
     grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${zoom}px, 1fr))`;
 }
 
-function toggle(img) {
-    selected.has(img) ? selected.delete(img) : selected.add(img);
-    renderImages();
+function toggleByCard(card) {
+    const encoded = card?.dataset?.img;
+    if (!encoded) return;
+    const img = decodeURIComponent(encoded);
+
+    if (selected.has(img)) {
+        selected.delete(img);
+        card.classList.remove('selected');
+    } else {
+        selected.add(img);
+        card.classList.add('selected');
+    }
 }
 
-function selectAll() { allImages.forEach(i => selected.add(i)); renderImages(); }
-function deselectAll() { selected.clear(); renderImages(); }
+function selectAll() {
+    allImages.forEach(i => selected.add(i));
+    document.querySelectorAll('.image-card').forEach(card => card.classList.add('selected'));
+}
+
+function deselectAll() {
+    selected.clear();
+    document.querySelectorAll('.image-card').forEach(card => card.classList.remove('selected'));
+}
+
 function zoomIn() { zoom = Math.min(zoom+20, 300); renderImages(); }
 function zoomOut() { zoom = Math.max(zoom-20, 70); renderImages(); }
 
 // ===== DRAG & DROP =====
-function onDragStart(e, img) {
+function onDragStart(e, encodedImg) {
+    const img = decodeURIComponent(encodedImg);
     draggedFile = img;
     dragSource = currentCluster;
     e.dataTransfer.effectAllowed = 'move';
@@ -413,7 +441,8 @@ async function moveMultipleImages(images, src, target) {
         if (result.success) {
             showStatus(`✅ Moved ${images.length} images to ${target}`, 'success');
             if (src === currentCluster) {
-                allImages = allImages.filter(i => !images.includes(i));
+                const movedSet = new Set(images);
+                allImages = allImages.filter(i => !movedSet.has(i));
                 images.forEach(img => selected.delete(img));
                 renderImages();
             }
